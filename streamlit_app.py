@@ -206,6 +206,7 @@ def benben_component():
     msgs_json = json.dumps(msgs, ensure_ascii=False)
     html_code = """
 <style>
+body { background: transparent !important; margin: 0; padding: 0; }
 @keyframes bb_bounce { 0%,100%{transform:translateY(0)} 30%{transform:translateY(-14px)} 60%{transform:translateY(-6px)} }
 @keyframes bb_float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
 #bb_img { width:auto; height:132px; transform-origin:bottom center; }

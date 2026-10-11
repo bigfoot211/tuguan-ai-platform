@@ -197,52 +197,75 @@ def benben_images_b64():
 
 
 def benben_component():
-    """在页面嵌入犇犇吉祥物：定时轮播正能量话语，说话 5 秒后关闭对话框，休息后再说下一句。"""
+    """在侧边栏嵌入犇犇吉祥物：多表情 + 弹跳/浮动/眨眼动画，
+    定时轮播正能量话语，说话对话框显示 5 秒后关闭，休息后再说下一句。"""
     imgs = benben_images_b64()
     msgs = []
     for m in BENBEN_MESSAGES:
         msgs.append({"t": m["t"], "img": imgs[m["e"]]})
     msgs_json = json.dumps(msgs, ensure_ascii=False)
-    html_code = f"""
-<div style="position:relative; width:100%; min-height:330px; font-family:'Microsoft YaHei',sans-serif;">
+    html_code = """
+<style>
+@keyframes bb_bounce { 0%,100%{transform:translateY(0)} 30%{transform:translateY(-14px)} 60%{transform:translateY(-6px)} }
+@keyframes bb_float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+#bb_img { width:auto; height:132px; transform-origin:bottom center; }
+.bb-speak { animation: bb_bounce .9s ease-in-out infinite; }
+.bb-idle { animation: bb_float 3.2s ease-in-out infinite; }
+</style>
+<div style="position:relative; width:100%; min-height:240px; font-family:'Microsoft YaHei',sans-serif;">
   <div id="bb_bubble" style="position:absolute; top:0; left:0; right:0;
-       background:#ffffff; border:2px solid #2e7d32; border-radius:16px;
-       box-shadow:0 4px 16px rgba(0,0,0,.15); padding:14px 16px;
-       opacity:0; transition:opacity .5s;">
-    <div style="display:flex; align-items:center; gap:8px;">
-      <span style="background:#2e7d32; color:#fff; border-radius:10px;
-            padding:2px 10px; font-size:13px; font-weight:bold;">犇犇说</span>
-      <span id="bb_txt" style="font-size:15px; line-height:1.5; color:#1b3a1b;"></span>
+       background:#ffffff; border:2px solid #2e7d32; border-radius:14px;
+       box-shadow:0 4px 14px rgba(0,0,0,.15); padding:10px 12px;
+       opacity:0; transition:opacity .45s; z-index:3;">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span style="background:#2e7d32; color:#fff; border-radius:9px;
+            padding:1px 8px; font-size:12px; font-weight:bold; white-space:nowrap;">犇犇说</span>
+      <span id="bb_txt" style="font-size:13px; line-height:1.5; color:#1b3a1b;"></span>
     </div>
+    <div style="position:absolute; left:50%; bottom:-9px; margin-left:-8px; width:0; height:0;
+         border-left:8px solid transparent; border-right:8px solid transparent;
+         border-top:9px solid #2e7d32;"></div>
   </div>
-  <img id="bb_img" src="{imgs['happy']}"
+  <img id="bb_img" src="__IMG0__" class="bb-idle"
        style="position:absolute; bottom:0; left:50%; transform:translateX(-50%);
-       height:225px; width:auto; filter:drop-shadow(0 6px 10px rgba(0,0,0,.18));"/>
+       filter:drop-shadow(0 5px 9px rgba(0,0,0,.18)); z-index:2;"/>
 </div>
 <script>
-(function(){{
-  const MSGS = {msgs_json};
+(function(){
+  const MSGS = __MSGS__;
   const bubble = document.getElementById('bb_bubble');
   const txt = document.getElementById('bb_txt');
   const img = document.getElementById('bb_img');
+  const WINK = "__WINK__";
   let idx = 0;
-  const SHOW_MS = 5000;    // 说话对话框显示 5 秒
-  const REST_MS = 8000;    // 关闭后休息 8 秒
-  const tick = () => {{
+  let cur = MSGS[0].img;
+  const SHOW_MS = 5000;
+  const REST_MS = 8000;
+  function blink(){
+    if (img.src !== WINK) { const t = img.src; img.src = WINK; setTimeout(()=>{ img.src = t; }, 180); }
+  }
+  setInterval(blink, 3600);
+  function tick(){
     const m = MSGS[idx % MSGS.length];
+    cur = m.img;
     txt.textContent = m.t;
     img.src = m.img;
+    img.classList.remove('bb-idle');
+    img.classList.add('bb-speak');
     bubble.style.opacity = 1;
-    setTimeout(() => {{
-      bubble.style.opacity = 0;      // 5 秒后关闭说话对话框
-      setTimeout(() => {{ idx++; tick(); }}, REST_MS);  // 休息一会再继续说下一句
-    }}, SHOW_MS);
-  }};
+    setTimeout(() => {
+      bubble.style.opacity = 0;
+      img.classList.remove('bb-speak');
+      img.classList.add('bb-idle');
+      setTimeout(() => { idx++; tick(); }, REST_MS);
+    }, SHOW_MS);
+  }
   setTimeout(tick, 800);
-}})();
+})();
 </script>
 """
-    st.components.v1.html(html_code, height=340, scrolling=False)
+    html_code = html_code.replace("__IMG0__", imgs["happy"]).replace("__MSGS__", msgs_json).replace("__WINK__", imgs["wink"])
+    st.components.v1.html(html_code, height=250, scrolling=False)
 
 
 # ---------------------------------------------------------------- 页面：首页
@@ -255,12 +278,10 @@ def page_home():
                 "能在自然资源、农业农村、住房城乡建设、房地产等领域从事土地管理、规划、估价、调查与信息化管理等工作的"
                 "复合应用型高级专门人才。")
 
-    top = st.columns([1, 1, 1, 1.5])
-    top[0].metric("核心课程", len(get_courses()))
-    top[1].metric("知识点", len(get_knowledge_points()))
-    top[2].metric("智能问答", len(load_faq()["faqs"]))
-    with top[3]:
-        benben_component()
+    c1, c2, c3 = st.columns(3)
+    c1.metric("核心课程", len(get_courses()))
+    c2.metric("知识点", len(get_knowledge_points()))
+    c3.metric("智能问答", len(load_faq()["faqs"]))
 
     st.markdown("## 课程群概览")
     st.markdown("五门课程对应人才培养目标的五大能力维度，形成"
@@ -397,6 +418,8 @@ st.sidebar.divider()
 page = st.sidebar.radio("功能导航", ["首页", "课程学习", "知识检索", "智能问答"])
 st.sidebar.divider()
 st.sidebar.caption("知识点 68 个 · 智能问答 904 条 · 全部配图")
+with st.sidebar:
+    benben_component()
 
 if page == "首页":
     page_home()

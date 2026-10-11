@@ -1,0 +1,309 @@
+# -*- coding: utf-8 -*-
+"""
+土管AI实训平台 · Streamlit 公网版
+==================================
+土地资源管理专业课余自主学习系统（与本地 Flask 版同源数据）。
+整合土地管理学、地籍管理、土地利用规划、不动产估价、GIS与遥感应用
+五门核心课程：68 个知识点（全部配套示意图）+ 904 条智能问答（答案配图）。
+
+部署：Streamlit Community Cloud（https://streamlit.io/cloud）
+运行：streamlit run streamlit_app.py
+"""
+import json
+import os
+import re
+
+import streamlit as st
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
+
+# ---------------------------------------------------------------- 数据加载
+@st.cache_data(show_spinner=False)
+def load_courses():
+    with open(os.path.join(DATA_DIR, "courses.json"), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@st.cache_data(show_spinner=False)
+def load_faq():
+    with open(os.path.join(DATA_DIR, "faq.json"), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def img_path(rel):
+    """把 JSON 中的 /static/img/... 相对路径转为本地绝对路径。"""
+    return os.path.join(BASE_DIR, rel.lstrip("/"))
+
+
+def get_courses():
+    return load_courses()["courses"]
+
+
+def get_knowledge_points():
+    points = []
+    for c in get_courses():
+        for kp in c["knowledge_points"]:
+            kp = dict(kp)
+            kp["_course_id"] = c["id"]
+            kp["_course_name"] = c["name"]
+            points.append(kp)
+    return points
+
+
+# ---------------------------------------------------------------- 检索引擎（与 Flask 版一致）
+def normalize(text):
+    text = re.sub(r"[\s\u3000，。！？、；：,.!?;:\"“”‘’（）()【】\[\]]+", "", text)
+    return text.lower()
+
+
+def search_knowledge(query, limit=8):
+    q = normalize(query)
+    if not q:
+        return []
+    scored = []
+    for kp in get_knowledge_points():
+        score = 0.0
+        title = normalize(kp["title"])
+        summary = normalize(kp["summary"])
+        points_text = normalize("".join(kp["points"]))
+        kw_text = normalize("|".join(kp["keywords"]))
+        if q in title:
+            score += 10.0
+        for kw in kp["keywords"]:
+            nkw = normalize(kw)
+            if nkw and nkw in q:
+                score += 6.0
+        if q in kw_text:
+            score += 5.0
+        if q in summary:
+            score += 3.0
+        if q in points_text:
+            score += 2.0
+        for unit in [q[i:i + 2] for i in range(max(0, len(q) - 1))]:
+            if len(unit) == 2 and unit in title:
+                score += 0.5
+            if len(unit) == 2 and unit in kw_text:
+                score += 0.2
+        if score > 0:
+            scored.append((score, kp))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [kp for _, kp in scored[:limit]]
+
+
+def search_faq(query):
+    q = normalize(query)
+    if not q:
+        return None
+    best = None
+    best_score = 0.0
+    for faq in load_faq()["faqs"]:
+        score = 0.0
+        hit_words = []
+        for kw in faq["keywords"]:
+            nkw = normalize(kw)
+            if not nkw:
+                continue
+            if nkw in q:
+                score += len(nkw)
+                hit_words.append(kw)
+            else:
+                matched = sum(1 for i in range(len(nkw) - 1)
+                              if nkw[i:i + 2] and nkw[i:i + 2] in q)
+                score += matched * 0.3
+        nq = normalize(faq["question"])
+        if nq in q:
+            score += 20.0
+        if score > best_score:
+            best_score = score
+            best = {"faq": faq, "score": score, "hits": hit_words}
+    if best is not None and best["score"] >= 2.0:
+        return best
+    return None
+
+
+# ---------------------------------------------------------------- 页面组件
+def show_image(rel, caption="", width=520):
+    if rel:
+        p = img_path(rel)
+        if os.path.exists(p):
+            st.image(p, caption=caption, use_container_width=True)
+        else:
+            st.warning(f"配图缺失：{rel}")
+    return
+
+
+def render_kp(kp, full=False):
+    """渲染单个知识点（标题/概述/要点/关键词/配图）。"""
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.markdown(f"##### {kp['id']} · {kp['title']}")
+        st.markdown(kp["summary"])
+        for p in (kp["points"] if full else kp["points"][:3]):
+            st.markdown(f"- {p}")
+        st.markdown("**关键词：** " + "、".join(kp["keywords"]))
+    with c2:
+        show_image(kp.get("image"), kp.get("image_caption", ""))
+    st.divider()
+
+
+# ---------------------------------------------------------------- 页面：首页
+def page_home():
+    data = load_courses()
+    meta = data["meta"]
+    st.markdown(f"# {meta['title']}")
+    st.markdown("> 培养德智体美劳全面发展，具备现代管理学、经济学、资源学与地理信息科学基本理论，"
+                "掌握土地资源调查与评价、地籍管理、土地利用规划、土地估价、国土空间规划与治理等专业知识与技能，"
+                "能在自然资源、农业农村、住房城乡建设、房地产等领域从事土地管理、规划、估价、调查与信息化管理等工作的"
+                "复合应用型高级专门人才。")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("核心课程", len(get_courses()))
+    c2.metric("知识点", len(get_knowledge_points()))
+    c3.metric("智能问答", len(load_faq()["faqs"]))
+
+    st.markdown("## 课程群概览")
+    st.markdown("五门课程对应人才培养目标的五大能力维度，形成"
+                "“制度认知 → 业务技能 → 规划能力 → 估价实务 → 信息化素养”的递进式课程体系。")
+    cols = st.columns(2)
+    for i, c in enumerate(get_courses()):
+        with cols[i % 2]:
+            with st.container(border=True):
+                show_image(f"/static/img/course/course-{c['id']}.png", "", width=1000)
+                st.markdown(f"### {c['code']} · {c['name']}")
+                st.caption(c["english_name"])
+                st.markdown(c["brief"])
+                for t in c["train_targets"]:
+                    st.markdown(f"- ✓ {t}")
+                st.markdown(f"知识点数：**{len(c['knowledge_points'])}**")
+
+    st.markdown("## 能力培养矩阵")
+    matrix = [
+        ("理论素养与政策认知", "土地管理学", "土地制度、法规与政策运用能力", "自然资源行政管理岗"),
+        ("地籍业务技能", "地籍管理", "地籍调查、登记、测量操作能力", "不动产登记、调查测绘岗"),
+        ("规划编制与实施", "土地利用规划", "国土空间规划编制与管理能力", "规划编制、用途管制岗"),
+        ("估价实务能力", "不动产估价", "估价方法运用与报告撰写能力", "土地评估、房地产估价机构"),
+        ("信息化与空间分析", "GIS与遥感应用", "空间数据处理与遥感监测能力", "自然资源信息化、国土监测岗"),
+    ]
+    st.table(matrix)
+
+
+# ---------------------------------------------------------------- 页面：课程学习
+def page_course():
+    st.markdown("# 课程知识库")
+    st.markdown(f"覆盖 {len(get_courses())} 门课程、{len(get_knowledge_points())} 个核心知识点，"
+                "每个知识点均配套示意图，点击图片可放大查看。")
+
+    course_ids = [f"{c['code']} · {c['name']}" for c in get_courses()]
+    sel = st.selectbox("选择课程", course_ids)
+    course = get_courses()[course_ids.index(sel)]
+
+    st.markdown(f"## {course['code']} · {course['name']}")
+    st.caption(course["english_name"])
+    st.markdown(course["brief"])
+    st.markdown("**对应培养能力：**")
+    for t in course["train_targets"]:
+        st.markdown(f"- ✓ {t}")
+
+    show_image(f"/static/img/course/course-{course['id']}.png", "", width=1000)
+
+    st.markdown(f"### 核心知识点（{len(course['knowledge_points'])}）")
+    for i, kp in enumerate(course["knowledge_points"]):
+        with st.expander(f"{kp['id']} · {kp['title']}", expanded=(i < 2)):
+            render_kp(kp, full=True)
+
+
+# ---------------------------------------------------------------- 页面：知识检索
+def page_search():
+    st.markdown("# 知识点检索")
+    q = st.text_input("输入关键词（如：占补平衡、界址、资本化率、卫片执法…）")
+    if q:
+        results = search_knowledge(q)
+        st.markdown(f"### 检索结果：共 {len(results)} 条")
+        if results:
+            for kp in results:
+                render_kp(kp, full=False)
+        else:
+            st.info("未找到相关知识点，建议尝试更短的关键词。")
+    st.markdown("---")
+    st.markdown("## 按课程浏览全部知识点")
+    for c in get_courses():
+        st.markdown(f"**{c['code']} · {c['name']}**（{len(c['knowledge_points'])} 个）")
+        st.markdown("、".join(f"{kp['id']} {kp['title']}" for kp in c["knowledge_points"]))
+        st.markdown("")
+
+
+# ---------------------------------------------------------------- 页面：智能问答
+def page_qa():
+    st.markdown("# 智能问答")
+    st.markdown("基于内置 900+ 条问答库的规则式智能答疑，无需联网。以自然语言提问，系统即时给出专业解答并配套示意图。")
+
+    data = load_faq()
+    suggested = data["suggested_questions"]
+    st.markdown("**试试这样问：**")
+    chips = "　·　".join(suggested[:8])
+    st.caption(chips)
+
+    if "qa_history" not in st.session_state:
+        st.session_state.qa_history = []
+
+    q = st.text_input("请输入你的问题", key="qa_input")
+    ask_btn = st.button("提问", type="primary", use_container_width=True)
+
+    if ask_btn and q.strip():
+        hit = search_faq(q)
+        with st.container(border=True):
+            if hit:
+                faq = hit["faq"]
+                st.markdown(f"**[{faq['category']}]** {faq['question']}")
+                c1, c2 = st.columns([3, 2])
+                with c1:
+                    st.markdown(faq["answer"])
+                with c2:
+                    show_image(faq.get("image"), faq.get("image_caption", ""))
+                related = [f for f in data["faqs"]
+                           if f["id"] != faq["id"] and f["category"] == faq["category"]][:3]
+                if related:
+                    st.markdown("**相关提问：** " + "　·　".join(r["question"] for r in related))
+            else:
+                related_kps = search_knowledge(q, limit=3)
+                if related_kps:
+                    st.markdown("未在问答库中找到直接匹配，以下是最相关的知识点：")
+                    c1, c2 = st.columns([3, 2])
+                    with c1:
+                        for kp in related_kps:
+                            st.markdown(f"**{kp['id']} · {kp['title']}**（{kp['_course_name']}）")
+                            st.markdown(kp["summary"])
+                    with c2:
+                        show_image(related_kps[0].get("image"), related_kps[0].get("image_caption", ""))
+                else:
+                    st.markdown(data["fallback_tip"])
+                    st.markdown("**可以试试：** " + "　·　".join(data["suggested_questions"][:5]))
+
+    if st.session_state.qa_history:
+        st.markdown("---")
+        st.markdown("### 最近提问")
+        for h in st.session_state.qa_history[-5:]:
+            st.caption(h)
+
+
+# ---------------------------------------------------------------- 主入口
+st.set_page_config(page_title="土管AI实训平台", page_icon="🌏", layout="wide")
+st.sidebar.markdown("## 🌏 土管AI实训平台")
+st.sidebar.markdown("土地资源管理专业课余自主学习系统")
+st.sidebar.markdown("综合人才培养目标与五门核心课程：土地管理学、地籍管理、土地利用规划、不动产估价、GIS与遥感应用。")
+st.sidebar.divider()
+
+page = st.sidebar.radio("功能导航", ["首页", "课程学习", "知识检索", "智能问答"])
+st.sidebar.divider()
+st.sidebar.caption("知识点 68 个 · 智能问答 904 条 · 全部配图")
+
+if page == "首页":
+    page_home()
+elif page == "课程学习":
+    page_course()
+elif page == "知识检索":
+    page_search()
+else:
+    page_qa()

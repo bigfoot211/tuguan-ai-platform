@@ -14,6 +14,7 @@ import os
 import re
 
 import streamlit as st
+import base64
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -148,6 +149,102 @@ def render_kp(kp, full=False):
     st.divider()
 
 
+# ---------------------------------------------------------------- 犇犇正能量组件
+# 湖南农业大学吉祥物“犇犇”：表情丰富、定时说一句土管专业正能量话（学习/就业/社会地位），
+# 说话对话框显示 5 秒后关闭，休息片刻再继续说下一句。
+BENBEN_MESSAGES = [
+    # 学习类
+    {"t": "土地是财富之母。学土管，就是读懂大地这本最厚的书！📖", "e": "happy"},
+    {"t": "今天多记一个地类编码，明天就多一双看懂国土的眼睛。🔍", "e": "wink"},
+    {"t": "知识就像土壤肥力，勤学善用，终会迎来丰收季！🌾", "e": "happy"},
+    {"t": "看懂一张土地利用现状图，就多一分把论文写在大地上的底气。🗺️", "e": "cheer"},
+    {"t": "学习也要讲“占补平衡”——输入的努力足够，输出的成长自然平衡！⚖️", "e": "happy"},
+    {"t": "测绘精度来自一次次校准，专业底气来自一遍遍复习。🎯", "e": "cheer"},
+    {"t": "把每个专业概念，都变成你认知世界的坐标系吧！🧭", "e": "wink"},
+    {"t": "深夜啃教材的你，正在为未来的国土事业积蓄能量。💪", "e": "star"},
+    # 就业类
+    {"t": "自然资源、住建、农业农村——土管人的舞台，比国土还要辽阔！🗺️", "e": "star"},
+    {"t": "不动产登记、国土空间规划、土地估价，行行都有土管人的C位！🎯", "e": "cheer"},
+    {"t": "土地估价师、规划师、测绘工程师——总有一款职业认证在等你拿下！📜", "e": "star"},
+    {"t": "国土空间规划师是热门新职业，土管专业正踩在时代风口上！🚀", "e": "star"},
+    {"t": "把 GIS 技能练熟，信息化岗位你就能一马当先！💻", "e": "cheer"},
+    {"t": "今天的实训报告，就是你明天递给用人单位的“地籍档案”！📋", "e": "wink"},
+    {"t": "从课堂到自然资源局，你差的只是一份漂亮的实习履历。🌟", "e": "happy"},
+    {"t": "别小看每门专业课——面试官问的，正是你平时记的那些要点。✍️", "e": "wink"},
+    # 社会地位与价值类
+    {"t": "守护耕地红线，就是守护十四亿人的饭碗，土管人使命光荣！🍚", "e": "star"},
+    {"t": "国土空间规划，绘的是山河，谋的是千秋，这份职业自带分量！⛰️", "e": "star"},
+    {"t": "让每一寸土地都用得其所，土管人就是大地的“首席管家”！🏡", "e": "happy"},
+    {"t": "参与土地征收与补偿、维护群众权益，土管工作有温度更有担当！🤝", "e": "happy"},
+    {"t": "从宗地到国土，你经手的每个数据，都在服务国家治理。🏛️", "e": "cheer"},
+    {"t": "第三次全国国土调查里有无数土管人的身影——你也可以成为其中一员！📊", "e": "star"},
+    {"t": "土地是稀缺资源，管好用好它，就是为国家守住最宝贵的家底。🔐", "e": "happy"},
+    {"t": "测绘人的足迹丈量山河，土管人的智慧规划未来，都值得尊敬！👏", "e": "cheer"},
+]
+BENBEN_EMOJI = {"学习": "📚", "就业": "💼", "价值": "🌟"}
+
+
+@st.cache_data(show_spinner=False)
+def benben_images_b64():
+    """读取犇犇表情变体并转 base64 data URI（供前端组件使用）。"""
+    faces = ["happy", "star", "wink", "cheer"]
+    out = {}
+    for f in faces:
+        p = os.path.join(BASE_DIR, "static", "img", "benben", f"benben_{f}.png")
+        with open(p, "rb") as fh:
+            out[f] = "data:image/png;base64," + base64.b64encode(fh.read()).decode("ascii")
+    return out
+
+
+def benben_component():
+    """在页面嵌入犇犇吉祥物：定时轮播正能量话语，说话 5 秒后关闭对话框，休息后再说下一句。"""
+    imgs = benben_images_b64()
+    msgs = []
+    for m in BENBEN_MESSAGES:
+        msgs.append({"t": m["t"], "img": imgs[m["e"]]})
+    msgs_json = json.dumps(msgs, ensure_ascii=False)
+    html_code = f"""
+<div style="position:relative; width:100%; min-height:330px; font-family:'Microsoft YaHei',sans-serif;">
+  <div id="bb_bubble" style="position:absolute; top:0; left:0; right:0;
+       background:#ffffff; border:2px solid #2e7d32; border-radius:16px;
+       box-shadow:0 4px 16px rgba(0,0,0,.15); padding:14px 16px;
+       opacity:0; transition:opacity .5s;">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="background:#2e7d32; color:#fff; border-radius:10px;
+            padding:2px 10px; font-size:13px; font-weight:bold;">犇犇说</span>
+      <span id="bb_txt" style="font-size:15px; line-height:1.5; color:#1b3a1b;"></span>
+    </div>
+  </div>
+  <img id="bb_img" src="{imgs['happy']}"
+       style="position:absolute; bottom:0; left:50%; transform:translateX(-50%);
+       height:225px; width:auto; filter:drop-shadow(0 6px 10px rgba(0,0,0,.18));"/>
+</div>
+<script>
+(function(){{
+  const MSGS = {msgs_json};
+  const bubble = document.getElementById('bb_bubble');
+  const txt = document.getElementById('bb_txt');
+  const img = document.getElementById('bb_img');
+  let idx = 0;
+  const SHOW_MS = 5000;    // 说话对话框显示 5 秒
+  const REST_MS = 8000;    // 关闭后休息 8 秒
+  const tick = () => {{
+    const m = MSGS[idx % MSGS.length];
+    txt.textContent = m.t;
+    img.src = m.img;
+    bubble.style.opacity = 1;
+    setTimeout(() => {{
+      bubble.style.opacity = 0;      // 5 秒后关闭说话对话框
+      setTimeout(() => {{ idx++; tick(); }}, REST_MS);  // 休息一会再继续说下一句
+    }}, SHOW_MS);
+  }};
+  setTimeout(tick, 800);
+}})();
+</script>
+"""
+    st.components.v1.html(html_code, height=340, scrolling=False)
+
+
 # ---------------------------------------------------------------- 页面：首页
 def page_home():
     data = load_courses()
@@ -158,10 +255,12 @@ def page_home():
                 "能在自然资源、农业农村、住房城乡建设、房地产等领域从事土地管理、规划、估价、调查与信息化管理等工作的"
                 "复合应用型高级专门人才。")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("核心课程", len(get_courses()))
-    c2.metric("知识点", len(get_knowledge_points()))
-    c3.metric("智能问答", len(load_faq()["faqs"]))
+    top = st.columns([1, 1, 1, 1.5])
+    top[0].metric("核心课程", len(get_courses()))
+    top[1].metric("知识点", len(get_knowledge_points()))
+    top[2].metric("智能问答", len(load_faq()["faqs"]))
+    with top[3]:
+        benben_component()
 
     st.markdown("## 课程群概览")
     st.markdown("五门课程对应人才培养目标的五大能力维度，形成"
